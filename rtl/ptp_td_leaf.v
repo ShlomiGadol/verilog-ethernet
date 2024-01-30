@@ -286,13 +286,14 @@ reg [9+CMP_FNS_W-1:0] src_ns_sync_reg = 0;
 
 reg [FNS_W-1:0] ts_fns_reg = 0, ts_fns_next = 0;
 
+reg [8:0] ts_rel_ns_lsb_reg = 0, ts_rel_ns_lsb_next = 0;
 reg [TS_NS_W-1:0] ts_rel_ns_reg = 0, ts_rel_ns_next = 0;
-reg ts_tod_step_reg = 1'b0, ts_tod_step_next;
+reg ts_rel_step_reg = 1'b0, ts_rel_step_next;
 
 reg [TS_TOD_S_W-1:0] ts_tod_s_reg = 0, ts_tod_s_next = 0;
 reg [TS_TOD_NS_W-1:0] ts_tod_ns_reg = 0, ts_tod_ns_next = 0;
 reg [8:0] ts_tod_offset_ns_reg = 0, ts_tod_offset_ns_next = 0;
-reg ts_rel_step_reg = 1'b0, ts_rel_step_next;
+reg ts_tod_step_reg = 1'b0, ts_tod_step_next;
 
 reg pps_reg = 1'b0, pps_next;
 reg pps_str_reg = 1'b0, pps_str_next;
@@ -643,6 +644,7 @@ always @* begin
 
     ts_fns_next = ts_fns_reg;
 
+    ts_rel_ns_lsb_next = ts_rel_ns_lsb_reg;
     ts_rel_ns_next = ts_rel_ns_reg;
     ts_rel_step_next = 1'b0;
 
@@ -741,10 +743,17 @@ always @* begin
     // shared fractional ns
     ts_fns_next = ts_fns_reg + period_ns_reg;
 
-    // relative timestamp
-    ts_rel_ns_next = ({ts_rel_ns_reg, ts_fns_reg} + period_ns_reg) >> FNS_W;
+    // relative timestamp LSB
+    ts_rel_ns_lsb_next = ({ts_rel_ns_lsb_reg, ts_fns_reg} + period_ns_reg) >> FNS_W;
 
     if (TS_REL_EN) begin
+        // relative timestamp
+        ts_rel_ns_next[8:0] = ts_rel_ns_lsb_reg;
+
+        if (!ts_rel_ns_next[8] && ts_rel_ns_reg[8]) begin
+            ts_rel_ns_next[TS_REL_NS_W-1:9] = ts_rel_ns_reg[TS_REL_NS_W-1:9] + 1;
+        end
+
         if (dst_update_reg && !dst_sync_reg && dst_rel_shadow_valid_reg && (dst_load_cnt_reg == 0)) begin
             // check timestamp MSBs
             if (dst_rel_step_shadow_reg || ts_rel_load_ts_reg) begin
@@ -776,7 +785,7 @@ always @* begin
 
     if (TS_TOD_EN) begin
         // absolute time-of-day timestamp
-        ts_tod_ns_next[8:0] = ts_rel_ns_next[8:0] + ts_tod_offset_ns_reg;
+        ts_tod_ns_next[8:0] = ts_rel_ns_lsb_reg + ts_tod_offset_ns_reg;
 
         if (ts_tod_ns_reg[TS_TOD_NS_W-1]) begin
             pps_str_next = 1'b0;
@@ -931,6 +940,7 @@ always @(posedge clk) begin
 
     ts_fns_reg <= ts_fns_next;
 
+    ts_rel_ns_lsb_reg <= ts_rel_ns_lsb_next;
     ts_rel_ns_reg <= ts_rel_ns_next;
     ts_rel_step_reg <= ts_rel_step_next;
 
@@ -976,6 +986,7 @@ always @(posedge clk) begin
     if (rst) begin
         period_ns_reg <= 0;
         ts_fns_reg <= 0;
+        ts_rel_ns_lsb_reg <= 0;
         ts_rel_ns_reg <= 0;
         ts_rel_step_reg <= 1'b0;
         ts_tod_s_reg <= 0;
